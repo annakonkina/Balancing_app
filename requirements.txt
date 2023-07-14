@@ -1,0 +1,9 @@
+matplotlib==3.6.2
+nltk==3.7
+pandas==2.0.0rc0
+Pillow==9.4.0
+plotly==5.0.0
+streamlit==1.16.0
+wordcloud==1.8.2.2
+openpyxl==3.0.10
+streamlit-aggrid==0.3.4

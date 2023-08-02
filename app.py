@@ -5,6 +5,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 from streamlit_extras.no_default_selectbox import selectbox
 from itertools import chain
+from basic_functions import make_flat
 
 
 st.set_page_config(page_title = 'Interactive balancing', layout="wide")
@@ -68,6 +69,9 @@ if 'uploaded_file' in st.session_state:
 
     if len(st.session_state.exp_drop_dict) == 0 or 'exp_drop_dict' not in st.session_state:
         st.session_state.exp_drop_dict = {}
+
+    if 'exclude_list' not in st.session_state:
+        st.session_state.exclude_list = []
 
     # -------------------------------------------------------------
     # the table is displayed
@@ -148,13 +152,15 @@ if 'uploaded_file' in st.session_state:
 
     #here df_filtered is still ok
     uids_filter = st.session_state.df_filtered.uid.unique().tolist()
-    st.text(len(uids_filter))
 
     for cond in mask:
         cond_uids = st.session_state.df_filtered[cond].uid.unique().tolist()
         uids_filter = [i for i in uids_filter if i in cond_uids]
 
     uids_filter = [*set(uids_filter)]
+
+    if len(st.session_state.exclude_list) > 0:
+        uids_filter = [i for i in uids_filter if i not in st.session_state.exclude_list]
 
     df_filtered_to_drop = st.session_state.df_filtered[st.session_state.df_filtered.uid.isin(uids_filter)]
     # finally leaving only people belonging to the selected experiment
@@ -182,7 +188,27 @@ if 'uploaded_file' in st.session_state:
     col2.markdown('**NB OF PEOPLE SELECTED TO DROP**:')
     for k in st.session_state.exp_drop_dict.keys():
         col2.markdown(f"{k} >> **{len(set(st.session_state.exp_drop_dict[k]))}**")
-        
+
+    col2.markdown('If you are ready to confirm this selection, please, press "CONFIRM" to see the balanced tables. \
+                  Note, that the round will start over once u press submit and the selected ids will be stored in the background')
+    confirm_round = col2.button('CONFIRM')
+    if confirm_round:
+        st.session_state.exclude_list += [*set(make_flat(st.session_state.exp_drop_dict.values()))]
+        confirm_round = False
+        col2.markdown(f"**Total nb of dropped uids from this round:** {len(set(make_flat(st.session_state.exp_drop_dict.values())))}")
+        col2.markdown(f"**TOTAL nb of dropped uids:** {len(set(st.session_state.exclude_list))}")
+        st.session_state.exp_drop_dict = {}
+
+    col2.markdown('If you want to start from the beginning, press "REFRESH". \
+                  The filters above will be refreshed once you select an experiment to work with.')
+    clean_exclude_list = col2.button('REFRESH')
+    if clean_exclude_list:
+        st.session_state.exclude_list = []
+        st.session_state.exp_drop_dict = {}
+        clean_exclude_list = False
+
+    # col2.markdown(f'---------- here we will display demographics balanced))}')
+
 
    
 

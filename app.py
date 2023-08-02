@@ -1,13 +1,11 @@
 import pandas as pd
+import numpy as np
 import streamlit as st
 from PIL import Image
 import matplotlib.pyplot as plt
-import string
 from streamlit_extras.no_default_selectbox import selectbox
+from itertools import chain
 
-
-# from st_aggrid import AgGrid, GridUpdateMode,  JsCode, DataReturnMode,
-# from st_aggrid.grid_options_builder import GridOptionsBuilder
 
 st.set_page_config(page_title = 'Interactive balancing', layout="wide")
 st.header('Interactive balancing')
@@ -68,6 +66,9 @@ if 'uploaded_file' in st.session_state:
             )
     col2.dataframe(st.session_state.df)
 
+    if len(st.session_state.exp_drop_dict) == 0 or 'exp_drop_dict' not in st.session_state:
+        st.session_state.exp_drop_dict = {}
+
     # -------------------------------------------------------------
     # the table is displayed
     # # Basic input form (col 1)
@@ -98,20 +99,17 @@ if 'uploaded_file' in st.session_state:
             # only include default arg if set_default=True as some forms don't support default
             **{"default": default for x in [set_default] if set_default},
         }
-
-
+    
     # Usage
-    selected_experiments = col1.multiselect("Select experiment", [i for i in st.session_state.df.experiment_name.unique()],
+    selected_experiments = col1.multiselect("Select ONLY ONE experiment from which you would like to drop people", 
+                                            [i for i in st.session_state.df.experiment_name.unique()],
         **experiment_state("selected_experiments", [], set_default=True)
     )
 
-    col1.write(f'Selected experiments: {selected_experiments}')
+    col1.markdown(f'**Selected experiment**: {selected_experiments}')
     
-    # --------------------------------------------------------------
-    # displaying all the filters possible
-    st.session_state.df['answer'] = st.session_state.df['answer'].fillna('-')
-    col2.markdown(f'Nb of respondents in the data: {st.session_state.df.uid.nunique()}') 
-
+    # # --------------------------------------------------------------
+    # # displaying all the filters possible
     # lock the options in the first run
     for q in st.session_state.df.question.unique():
         if not any(' | ' in str(i) for i in st.session_state.df[
@@ -121,7 +119,7 @@ if 'uploaded_file' in st.session_state:
                                                 st.session_state.df.question == q
                                             ].answer.unique().tolist()
         else:
-            options_ = list(itertools.chain.from_iterable([a.split(' | ') 
+            options_ = list(chain.from_iterable([a.split(' | ') 
                                 for a in set([i for i in st.session_state.df[
                                                 st.session_state.df.question == q
                                             ].answer.unique()])]))
@@ -135,100 +133,58 @@ if 'uploaded_file' in st.session_state:
                                     )
         
     # so far we just created the multiselct objects themselves, which are not connected to the data. 
-    # next we need to actually filter out dataframe and connect it to the wordcloud function
+    # next we need to actually filter out dataframe
+    # --- FILTER DATAFRAME BASED ON SELECTION
+
+    mask = []
+    for q in st.session_state.df.question.unique():
+        ### st.markdown(globals()[f'{q}_selection']) #is list of all options for the specific question selected
+        mask.append((st.session_state.df.question == q)
+                                            & (st.session_state.df.answer.isin(globals()[f'{q}_selection'])))
+
+    # ADD df_filtered to the current session state:
+    if 'df_filtered' not in st.session_state:
+        st.session_state.df_filtered = st.session_state.df.copy()
+
+    #here df_filtered is still ok
+    uids_filter = st.session_state.df_filtered.uid.unique().tolist()
+    st.text(len(uids_filter))
+
+    for cond in mask:
+        cond_uids = st.session_state.df_filtered[cond].uid.unique().tolist()
+        uids_filter = [i for i in uids_filter if i in cond_uids]
+
+    uids_filter = [*set(uids_filter)]
+
+    df_filtered_to_drop = st.session_state.df_filtered[st.session_state.df_filtered.uid.isin(uids_filter)]
+    # finally leaving only people belonging to the selected experiment
+    df_filtered_to_drop = df_filtered_to_drop[
+        df_filtered_to_drop.experiment_name.isin(selected_experiments)]
+    uids_filter = df_filtered_to_drop.uid.unique().tolist()
+
+    col2.markdown(f'**Available uids to drop:** {df_filtered_to_drop.uid.nunique()}')
+
+     # SELECTION OF NUMBER OF PEOPLE TO BE DROPPED
+    droppers_number = col2.number_input('Insert a number of people you would like to exclude')
+    col2.text(f'The current number is {droppers_number}')
+
+    col2.markdown('If you are fine with the uids number to drop in the selected experiment, press "Submit" \
+    and select another experiment above')
+    submit_exp_drop = col2.button('Submit uids')
+    if submit_exp_drop:
+        np.random.seed(1234)
+        st.session_state.exp_drop_dict[selected_experiments[0]] = list(
+            np.random.choice(uids_filter,
+            int(droppers_number), 
+            replace=False))
+        submit_exp_drop = False
+
+    col2.markdown('**NB OF PEOPLE SELECTED TO DROP**:')
+    for k in st.session_state.exp_drop_dict.keys():
+        col2.markdown(f"{k} >> **{len(set(st.session_state.exp_drop_dict[k]))}**")
         
-    # # --- FILTER DATAFRAME BASED ON SELECTION
-    # mask = []
-    # for col in st.session_state.df_cols:
-    #     if not any(' | ' in str(i) for i in st.session_state.df[col].unique()):
-    #         mask.append((st.session_state.df[col].isin(globals()[f'{col}_selection'])))
-    #     else:
-    #         multi_mask = []
-    #         for opt in globals()[f'{col}_selection']:
-    #             multi_mask.append((st.session_state.df[col].str.contains(opt, regex=False)))
-                
-    #         mask.append(multi_mask)
 
-    # # ADD df_filtered to the current session state:
-    # if 'df_filtered' not in st.session_state:
-    #     st.session_state.df_filtered = st.session_state.df.copy() #was df_filtered.copy()
-    
-    # #here df_filtered is still ok
-    # index_filter = st.session_state.df_filtered.index.values.tolist()
-    # # st.text(len(index_filter))
-    # for cond in mask:
-    #     if type(cond) == list:
-    #         cond_multi = pd.concat(cond, axis=1)
-    #         cond_x = cond_multi.any(axis='columns')
-    #         df_filtered_x = st.session_state.df_filtered[cond_x]
-    #         index_filter = [i for i in index_filter if i in df_filtered_x.index.values.tolist()]
-    #         # st.session_state.df_filtered = df_filtered_x
-    #     else:
-    #         df_filtered_x = st.session_state.df_filtered[cond]
-    #         index_filter = [i for i in index_filter if i in df_filtered_x.index.values.tolist()]
-    #         # st.session_state.df_filtered = df_filtered_x
-    # index_filter = [*set(index_filter)]
-    # # st.text(len(index_filter))
-
-    
-    # df_filtered_to_use = st.session_state.df_filtered[st.session_state.df_filtered.index.isin(index_filter)]
-    # col2.markdown(f'**Available results:** {len(df_filtered_to_use)}')
-    # # st.text(st.session_state.df_filtered.shape)
-
-    # # till now al the filters are working fine. Without reloading the page we can play with them, removing and choosing 
-    # # again and they are changing the available results back to the original
-
-    
-    # stop_words = set(stopwords.words(st.session_state.language))
-
-    # if len(st.session_state.stopwords_to_add) > 0:
-    #     stop_words.update(st.session_state.stopwords_to_add)
-
-    # if len(st.session_state.stopwords_to_remove) > 0:
-    #     stop_words = stop_words - st.session_state.stopwords_to_remove
-
-    # st.session_state.stop_words = stop_words
-
-    # # ---- ADD WORDCLOUD
-    
-    # corpus = df_filtered_to_use.answer.unique().tolist() #was df_filtered, change 07.07.23 16:34
-    # corpus = [i.lower() for i in corpus]
-    # text = ' '.join(corpus)
-    # col2.markdown(f'Total nb of words: {len(text)}')
-
-    # for i in ['-', '  ', '’', "\'"]: # drop extra symbols
-    #     if i != '’':
-    #         text = text.replace(i, '')
-    #     else:
-    #         text = text.replace(i, "'")
-    # # st.text(text)
-    # text = text.translate(str.maketrans('', '', string.punctuation))
-
-    # # LEMMATIZE
-    # try:
-    #     text = lemmatize_sentence(text)
-    # except:
-    #     nltk.download('all')
-    #     text = lemmatize_sentence(text)
-
-
-    # # Create and generate a word cloud image:
-    # if 'wordcloud' not in st.session_state:    
-    #     with st.spinner('Wait for it...'):
-    #         wordcloud = calculate_wordcloud(text)
-    #     st.session_state.wordcloud = wordcloud
-    #     with st.spinner('Wait for it...'):
-    #         display_wordcloud(st.session_state.wordcloud)
-            
-    
-    # regenerate_wordcloud = col2.button('Generate wordcloud (or regenerate to refresh)')
-    # if regenerate_wordcloud:
-    #     with st.spinner('Wait for it...'):
-    #         wordcloud = calculate_wordcloud(text)
-    #     st.session_state.wordcloud = wordcloud
-    #     with st.spinner('Wait for it...'):
-    #         display_wordcloud(st.session_state.wordcloud)
-
+   
 
 
 

@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from streamlit_extras.no_default_selectbox import selectbox
 from itertools import chain
 from basic_functions import make_flat
+from calc_tables import demographics
 
 
 st.set_page_config(page_title = 'Interactive balancing', layout="wide")
@@ -67,7 +68,7 @@ if 'uploaded_file' in st.session_state:
             )
     col2.dataframe(st.session_state.df)
 
-    if len(st.session_state.exp_drop_dict) == 0 or 'exp_drop_dict' not in st.session_state:
+    if 'exp_drop_dict' not in st.session_state:
         st.session_state.exp_drop_dict = {}
 
     if 'exclude_list' not in st.session_state:
@@ -207,9 +208,71 @@ if 'uploaded_file' in st.session_state:
         st.session_state.exp_drop_dict = {}
         clean_exclude_list = False
 
-    # col2.markdown(f'---------- here we will display demographics balanced))}')
+    col2.markdown(f'That is how the balanced dataset looks?')
 
+    # generate_demo = col2.button('GENERATE/refresh TABLES')
+    # if generate_demo:
 
+    if 'breakouts' not in st.session_state:
+        breakouts = []
+        for q in st.session_state.df.question.unique():
+            d_ = {
+                'title': q.split('.')[0].upper(), 
+                'to_be_sorted':False,
+                'question': [q], 
+                'answers': None,
+                'position': "Screener",
+                }
+            breakouts.append(d_)
+
+        available_options = [[0]*len(breakouts)]
+
+        for breakout in breakouts:
+            breakout_index = breakouts.index(breakout)
+            # Fill answers
+            if breakouts[breakout_index ]['answers'] is None:
+                answers = list(st.session_state.df[(st.session_state.df['question'].isin(breakout['question'])) & \
+                                    (st.session_state.df['position']==breakout['position'])]['answer'].unique())
+                answers = [[part.strip() for part in str(answer).split("|")] for answer in answers]
+                answers = list(set(chain.from_iterable(answers)))
+                answers.sort()
+
+                tmp_answers = []
+                for answer in answers:
+                    tmp_answers.append({'title': answer, 'include': [answer], 'exclude': [], 'uids':None})
+                if len(tmp_answers) > 1:
+                    tmp_answers.insert(0, {'title': "Any answer", 'include': answers, 'exclude': [], 'uids':None})
+                breakouts[breakout_index]['answers'] = tmp_answers
+            
+            if len(breakouts[breakout_index]['answers']) > 1:
+                option_index = 1
+                for option in breakouts[ breakout_index ]['answers'][1:]:
+                    base_combination = [0]*len(breakouts)
+                    base_combination[breakout_index]= option_index
+
+                    available_options.append(base_combination)
+                    option_index += 1
+
+            st.session_state.breakouts = breakouts
+
+    nb_users_ = st.session_state.df[
+        ~st.session_state.df.uid.isin(st.session_state.exclude_list)].uid.nunique()
+    col2.markdown(f'There are {nb_users_} user ids.')
+    col2.markdown(f'{len(st.session_state.exclude_list)}')
+    
+    @st.cache(suppress_st_warning=False)
+    def build_demo():
+        return demographics(df_answers = st.session_state.df[
+            ~st.session_state.df.uid.isin(st.session_state.exclude_list)], 
+            breakouts = st.session_state.breakouts
+            )   
+    
+    tables = build_demo()
+    for n, t in tables.items():
+        col2.markdown(n)
+        col2.table(t)
+
+       
    
 
 
